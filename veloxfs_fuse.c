@@ -42,6 +42,8 @@
  *   cp largefile.bin /tmp/mnt/
  *   fusermount -u /tmp/mnt
  *   ./veloxfs_fuse veloxfs.img /tmp/mnt   # remount -- data intact
+ *   or for testing include -d
+ *   ./veloxfs_fuse veloxfs.img /tmp/mnt -d -o big_writes,max_write=131072,max_read=131072
  */
 
 #define FUSE_USE_VERSION 26

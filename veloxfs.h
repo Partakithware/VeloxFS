@@ -29,8 +29,8 @@
  * LICENSE: Public domain or MIT
  */
 
-#ifndef veloxfs_V5_H
-#define veloxfs_V5_H
+#ifndef veloxfs_H
+#define veloxfs_H
 
 #include <stdint.h>
 #include <stddef.h>

@@ -24,7 +24,7 @@
  * 
  * USAGE:
  *   #define veloxfs_IMPLEMENTATION
- *   #include "veloxfs_v5.h"
+ *   #include "veloxfs.h"
  * 
  * LICENSE: Public domain or MIT
  */

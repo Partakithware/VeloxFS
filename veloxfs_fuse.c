@@ -59,6 +59,8 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 
 #include "veloxfs.h"
 
@@ -910,15 +912,26 @@ static int show_stats(const char *path) {
  * ======================================================================= */
 
 int main(int argc, char *argv[]) {
+    // Replace the existing stat logic with this version that can detect the size of physical drives
     if (argc == 3 && strcmp(argv[1], "--format") == 0) {
+    int fd = open(argv[2], O_RDONLY);
+    if (fd < 0) { perror(argv[2]); return 1; }
+
+    uint64_t dev_size = 0;
+    // Try to get block device size; if it fails, fall back to regular file stat
+    if (ioctl(fd, BLKGETSIZE64, &dev_size) < 0) {
         struct stat st;
-        if (stat(argv[2], &st) != 0) { perror(argv[2]); return 1; }
-        uint64_t blocks = (uint64_t)st.st_size / veloxfs_BLOCK_SIZE;
-        if (blocks < 64) {
-            fprintf(stderr, "Image too small (need >= 64 blocks / 256KB)\n");
-            return 1;
-        }
-        return format_disk(argv[2], blocks);
+        if (fstat(fd, &st) != 0) { perror("fstat"); close(fd); return 1; }
+        dev_size = st.st_size;
+    }
+    close(fd);
+
+    uint64_t blocks = dev_size / veloxfs_BLOCK_SIZE;
+    if (blocks < 64) {
+        fprintf(stderr, "Device too small (detected %lu bytes)\n", (unsigned long)dev_size);
+        return 1;
+    }
+    return format_disk(argv[2], blocks);
     }
 
     if (argc == 3 && strcmp(argv[1], "--stats") == 0)

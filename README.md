@@ -5,6 +5,8 @@ A single-header C filesystem library, following the [STB](https://github.com/not
 The entire filesystem implementation lives in `veloxfs.h`. The optional `veloxfs_fuse.c` adapter lets you mount a veloxfs image as a real filesystem on Linux via FUSE. It is not required to use the library.
 Other examples can be found in [examples](./examples) here for different use case examples, for now there is only one. 
 
+Ensure you read the issues tab.
+
 ---
 
 ## How it works

@@ -1,5 +1,9 @@
 # veloxfs
 
+> [!IMPORTANT]
+> Latest version in latest branch (v6 Test, should now work fast on NAND/HDD as optimizations/changes were made now when formatting via fuse you can format the img with --nand or --hdd)
+> The latest branch fuse.c is not yet as complete as main branch version but works for now. README not yet updated for v6 changes so I would read through the files if I were you. Enjoy!
+
 A single-header C filesystem library, following the [STB](https://github.com/nothings/stb) single-file library convention.
 
 The entire filesystem implementation lives in `veloxfs.h`. The optional `veloxfs_fuse.c` adapter lets you mount a veloxfs image as a real filesystem on Linux via FUSE. It is not required to use the library.

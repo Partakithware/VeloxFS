@@ -1,7 +1,7 @@
 # veloxfs
 
 > [!IMPORTANT]
-> The `latest` branch contains **v6** — a full rewrite of the allocation engine tuned for **HDD, Flash, and NAND** storage. v6 images are **not compatible** with v5 images (different magic number `VLX6`). Re-format any existing images. The README below reflects v6.
+> The `latest` branch contains **v6** — a full rewrite of the allocation engine tuned for **HDD, Flash, and NAND** storage. v6 images are **not compatible** with v5 images (different magic number `VLX6`). Re-format any existing images. The README below reflects v5(main branch).
 > (v6 veloxfs, NAND/HDD optimizations/changes were made. Now when formatting via fuse you can format with --nand or --hdd)
 > v6 veloxfs_fuse.c covers a little less than the main branch version but works for now. Enjoy!
 

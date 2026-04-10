@@ -19,4 +19,12 @@ Mount It
 
 sudo mount -t veloxfs /dev/YOURDRIVEHERE /home/YOURUSERNAME/mountLOCATION
 
+Issues
+===
+Alot.
+Long Mount/Umount time
+Data loss if umount fails or is stopped of course
+etc...
+
+Again just an idea so far.
 

@@ -35,8 +35,10 @@ Mount It
 Issues
 ===
 Alot.
-Long Mount/Umount time
-Data loss if umount fails or is stopped of course
+Long Mount/Umount time.
+Data loss if umount fails or is stopped of course.
+Deletion not clearing space.
+Incorrect free space count.
 etc...
 
 Again just an idea so far.

@@ -3,21 +3,34 @@ This is heavily flawed and just a concept to test out.
 
 I had to sign the module hence signit.sh (You will need your own signing files)
 
+```
 make clean
 
 make
+```
+
+Load Driver
+
+```sudo insmod veloxfs_mod.ko```
+
+Verify
+```
+sudo dmesg | tail -n 20
+cat /proc/filesystems | grep veloxfs
+```
+
 
 Build the formatter
 
-gcc mkfs_velox.c -o mkfs_velox
+```gcc mkfs_velox.c -o mkfs_velox```
 
 Format Drive
 
-sudo ./mkfs_velox /dev/YOURDRIVEHERE
+```sudo ./mkfs_velox /dev/YOURDRIVEHERE```
 
 Mount It
 
-sudo mount -t veloxfs /dev/YOURDRIVEHERE /home/YOURUSERNAME/mountLOCATION
+```sudo mount -t veloxfs /dev/YOURDRIVEHERE /home/YOURUSERNAME/mountLOCATION```
 
 Issues
 ===

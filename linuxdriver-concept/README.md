@@ -46,10 +46,9 @@ sudo chown max:max /home/max/VMount
 
 Issues
 ===
-Alot.
-Extremly Long Mount/Umount/Format time.
+Extremly Long Mount/Umount/Format time. (No Paging)
 Data loss if umount fails or is stopped of course.
-etc...
+etc...(There is likely more but initial test now seem ok with this version)
 
 Again just an idea so far.
 

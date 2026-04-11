@@ -17,7 +17,7 @@ Getting Started
 ===
 1. Build & Sign
 
-You will need your own kernel signing keys to load the module.
+You will need your own kernel signing keys to load the module. (Assuming Secure Boot)
 
 I had to sign the module hence signit.sh (You will need your own signing files you can use signit.sh if you modify locations)
 

@@ -6,101 +6,120 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <endian.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 
-#define VELOX_MAGIC 0x564C5836
-#define BLOCK_SIZE  4096
-#define INODE_SIZE  144
+#define VELOX_BS        4096           
+#define INODE_SIZE      256
+#define INLINE_EXTENTS  4
+#define INODE_F_EXTENTS 0x01
+#define INODE_F_DIR     0x02
+#define FAT_EOF         0xFFFFFFFFFFFFFFFFULL
 
-typedef uint32_t __u32;
-typedef uint64_t __u64;
+typedef struct {
+    uint64_t start_block;
+    uint64_t block_count;
+} __attribute__((packed)) veloxfs_extent;
 
 struct __attribute__((packed)) veloxfs_superblock {
-    __u32 magic;
-    __u32 version;
-    __u32 block_size;
-    __u32 journal_enabled;
-    __u32 storage_hint;
-    __u32 _pad0;
-    __u64 block_count;
-    __u64 fat_start;
-    __u64 fat_blocks;
-    __u64 journal_start;
-    __u64 journal_blocks;
-    __u64 inode_start;
-    __u64 inode_blocks;
-    __u64 data_start;
-    __u64 reserved[4];
+    uint32_t magic; uint32_t version; uint32_t block_size;
+    uint32_t journal_enabled; uint32_t storage_hint; uint32_t _pad0;
+    uint64_t block_count; uint64_t fat_start; uint64_t fat_blocks;
+    uint64_t journal_start; uint64_t journal_blocks;
+    uint64_t inode_start; uint64_t inode_blocks;
+    uint64_t data_start; uint64_t reserved[4];
 };
 
 struct __attribute__((packed)) veloxfs_inode {
-    uint16_t i_mode;
-    uint16_t i_nlink;
-    uint32_t i_uid;
-    uint32_t i_gid;
-    uint64_t i_size;
-    uint64_t i_blocks;
-    uint64_t i_atime;
-    uint64_t i_mtime;
-    uint64_t i_ctime;
-    uint32_t i_flags;
-    uint32_t i_data[15];
-    uint8_t  padding[24]; 
+    uint64_t inode_num; uint64_t size;
+    uint32_t uid; uint32_t gid; uint32_t mode; uint32_t inode_flags;
+    uint64_t ctime; uint64_t mtime; uint64_t atime;
+    uint64_t fat_head;
+    veloxfs_extent extents[INLINE_EXTENTS];
+    uint64_t extent_count;
+    uint64_t _ipad; uint64_t _reserved_padding[14]; 
 };
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <device>\n", argv[0]);
-        return 1;
-    }
-
-    int fd = open(argv[1], O_RDWR | O_SYNC);
+    if (argc != 2) return 1;
+    int fd = open(argv[1], O_RDWR);
     if (fd < 0) { perror("open"); return 1; }
 
-    // 1. Get the actual 8GB size without using linux/fs.h (prevents conflicts)
-    off_t device_size = lseek(fd, 0, SEEK_END);
-    if (device_size == -1) { perror("lseek"); return 1; }
-    uint64_t total_blocks = device_size / BLOCK_SIZE;
-    lseek(fd, 0, SEEK_SET);
+    struct stat st;
+    fstat(fd, &st);
+    uint64_t dev_size = 0;
+    if (S_ISBLK(st.st_mode)) ioctl(fd, BLKGETSIZE64, &dev_size);
+    else dev_size = st.st_size;
 
-    void *buf;
-    if (posix_memalign(&buf, BLOCK_SIZE, BLOCK_SIZE) != 0) return 1;
-    memset(buf, 0, BLOCK_SIZE);
+    uint64_t total_blocks = dev_size / VELOX_BS;
+    
+    /* Layout perfectly matching veloxfs_mod.c */
+    uint64_t fat_blocks   = (total_blocks * 8 + VELOX_BS - 1) / VELOX_BS;
+    uint64_t inode_blocks = 125000; 
+    uint64_t dir_blocks   = total_blocks / 100; // Driver hardcodes this to 1%
+    if (dir_blocks == 0) dir_blocks = 1;
+    
+    // Data now starts safely AFTER the directory table
+    uint64_t data_start   = 1 + fat_blocks + inode_blocks + dir_blocks;
 
-    // 2. SUPERBLOCK (Matches your working logic)
+    void *buf = calloc(1, VELOX_BS);
+    uint64_t now = (uint64_t)time(NULL);
+
+    /* 1. Superblock */
     struct veloxfs_superblock *sb = (struct veloxfs_superblock *)buf;
-    sb->magic = htole32(VELOX_MAGIC);
+    sb->magic = htole32(0x564C5836UL);
     sb->version = htole32(6);
-    sb->block_size = htole32(BLOCK_SIZE);
-    
-    // NEW: Use actual capacity instead of 1024
+    sb->block_size = htole32(VELOX_BS);
     sb->block_count = htole64(total_blocks);
-    
-    // Maintain your working layout offsets
     sb->fat_start = htole64(1);
-    sb->fat_blocks = htole64(1); // Keeps it simple for the mount
-    sb->inode_start = htole64(2);
-    sb->inode_blocks = htole64(1);
-    sb->data_start = htole64(3);
-    
-    pwrite(fd, buf, BLOCK_SIZE, 0);
+    sb->fat_blocks = htole64(fat_blocks);
+    sb->inode_start = htole64(1 + fat_blocks);
+    sb->inode_blocks = htole64(inode_blocks);
+    sb->data_start = htole64(data_start);
+    pwrite(fd, buf, VELOX_BS, 0);
 
-    // 3. ROOT INODE (Block 2)
-    memset(buf, 0, BLOCK_SIZE);
-    struct veloxfs_inode *ri = (struct veloxfs_inode *)buf;
-    ri->i_mode = htole16(040755); 
-    ri->i_nlink = htole16(2);
-    ri->i_uid = htole32(1000); // Usually the 'max' user
-    ri->i_gid = htole32(1000); // Usually the 'max' group
-    ri->i_size = htole64(BLOCK_SIZE);
-    ri->i_blocks = htole64(1);
-    ri->i_data[0] = htole32(3); 
-    
-    pwrite(fd, buf, BLOCK_SIZE, 2 * BLOCK_SIZE);
+    /* 2. WIPE INODE AND DIRENT TABLES */
+    printf("Wiping Inode and Dirent Tables (%lu blocks)...\n", inode_blocks + dir_blocks);
+    void *zero_buf = calloc(1, VELOX_BS);
+    for (uint64_t i = 0; i < (inode_blocks + dir_blocks); i++) {
+        pwrite(fd, zero_buf, VELOX_BS, (1 + fat_blocks + i) * VELOX_BS);
+        if (i > 0 && i % 25000 == 0) printf("Progress: %lu blocks cleaned...\n", i);
+    }
+    free(zero_buf);
 
-    printf("VeloxFS v6 formatted. Capacity: %lu blocks (~%.2f GB)\n", 
-            total_blocks, (double)device_size / (1024*1024*1024));
-    
+    /* 3. Root Inode (Slot 0) */
+    struct veloxfs_inode *root = (struct veloxfs_inode *)buf;
+    memset(buf, 0, VELOX_BS);
+    root->inode_num = htole64(0);
+    root->mode = htole32(S_IFDIR | 0755);
+    root->inode_flags = htole32(INODE_F_DIR | INODE_F_EXTENTS);
+    root->size = htole64(VELOX_BS);
+    root->extent_count = htole64(1);
+    root->extents[0].start_block = htole64(data_start);
+    root->extents[0].block_count = htole64(1);
+    pwrite(fd, buf, VELOX_BS, (1 + fat_blocks) * VELOX_BS);
+
+    /* 4. FAT Initialization */
+    printf("Finalizing FAT...\n");
+    for (uint64_t b = 0; b < fat_blocks; b++) {
+        uint64_t *fat_ptr = (uint64_t *)buf;
+        memset(buf, 0, VELOX_BS);
+        for (int i = 0; i < (VELOX_BS / 8); i++) {
+            uint64_t abs_idx = (b * (VELOX_BS / 8)) + i;
+            // Mark SB, FAT, Inodes, and Dirent tables as reserved
+            if (abs_idx < data_start) fat_ptr[i] = htole64(FAT_EOF);
+        }
+        pwrite(fd, buf, VELOX_BS, (1 + b) * VELOX_BS);
+    }
+
+    /* 5. Clear Root Dir Data */
+    memset(buf, 0, VELOX_BS);
+    pwrite(fd, buf, VELOX_BS, data_start * VELOX_BS);
+
     free(buf);
     close(fd);
+    printf("Success! Filesystem mapped correctly for VeloxFS v6 Kernel Module.\n");
     return 0;
 }

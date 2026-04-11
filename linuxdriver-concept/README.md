@@ -1,5 +1,9 @@
 This is a test I made for a linux driver. I have it working on a real drive of mine (8gb).
-This is heavily flawed and just a concept to test out. (currently uses a modified veloxfs.h)
+This is just a concept to test out. (currently uses a modified veloxfs.h)
+
+It does now work though (tested on kernel 7.0.0, Ubuntu, 8GB eternal drive) (Survived umount with 10014 files (10k with touch, the other 14 are 130mb video files))
+
+I just wanted a concept to be premade and workable, feel free to get involved and correct it/fix it up if possible, thank you!
 
 I had to sign the module hence signit.sh (You will need your own signing files)
 

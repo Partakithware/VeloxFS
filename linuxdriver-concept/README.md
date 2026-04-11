@@ -1,5 +1,5 @@
 This is a test I made for a linux driver. I have it working on a real drive of mine (8gb).
-This is heavily flawed and just a concept to test out. (does not currently use veloxfs.h, just a concept)
+This is heavily flawed and just a concept to test out. (does not currently use veloxfs.h, just a concept, updating soon to use an adjusted veloxfs.h to make it possible)
 
 I had to sign the module hence signit.sh (You will need your own signing files)
 

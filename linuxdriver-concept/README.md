@@ -1,7 +1,7 @@
 This is a test I made for a linux driver. I have it working on a real drive of mine (8gb).
 This is just a concept to test out. (currently uses a modified veloxfs.h)
 
-It does now work though (tested on kernel 7.0.0, Ubuntu, 8GB eternal drive) (Survived umount with 10014 files (10k with touch, the other 14 are 130mb video files))
+It does now work though (tested on Linux 7.0.0-070000rc6-generic, Ubuntu, 8GB eternal drive) (Survived umount with 10014 files (10k with touch, the other 14 are 130mb video files))
 
 I just wanted a concept to be premade and workable, feel free to get involved and correct it/fix it up if possible, thank you!
 

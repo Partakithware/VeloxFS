@@ -6,6 +6,9 @@
 > The README below reflects v5(main branch)
 > [v6 Recommended Instead - Click Here](https://github.com/Partakithware/VeloxFS/tree/latest).
 
+> [!IMPORTANT]
+> The latest branch also contains a Linux Driver (concept) that works!
+
 A single-header C filesystem library, following the [STB](https://github.com/nothings/stb) single-file library convention.
 
 The entire filesystem implementation lives in `veloxfs.h`. The optional `veloxfs_fuse.c` adapter lets you mount a veloxfs image as a real filesystem on Linux via FUSE. It is not required to use the library.

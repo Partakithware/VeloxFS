@@ -1,5 +1,5 @@
 This is a test I made for a linux driver. I have it working on a real drive of mine (8gb).
-This is heavily flawed and just a concept to test out. (does not currently use veloxfs.h, just a concept, updating soon to use an adjusted veloxfs.h to make it possible)
+This is heavily flawed and just a concept to test out. (currently uses a modified veloxfs.h)
 
 I had to sign the module hence signit.sh (You will need your own signing files)
 
@@ -32,13 +32,19 @@ Mount It
 
 ```sudo mount -t veloxfs /dev/YOURDRIVEHERE /home/YOURUSERNAME/mountLOCATION```
 
+Other stuff I used (you will need to change to match your drive/user/locations)
+```
+sudo rmmod veloxfs_mod
+sudo blockdev --flushbufs /dev/sdc1
+df -i /home/max/VMount
+sudo chown max:max /home/max/VMount
+```
+
 Issues
 ===
 Alot.
-Long Mount/Umount time.
+Extremly Long Mount/Umount/Format time.
 Data loss if umount fails or is stopped of course.
-Deletion not clearing space.
-Incorrect free space count.
 etc...
 
 Again just an idea so far.

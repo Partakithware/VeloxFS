@@ -87,6 +87,8 @@ Modern OS performance comes from "lying" — the kernel tells the app the write 
     [!NOTE]
     That 512-byte physical block size is actually working against it. The driver is optimized for xxxx-byte chunks, meaning the hardware has to do "internal" work to split your driver's requests into those smaller 512-byte physical sectors.
 
+Hence the slow umount/mount.
+
 Contributing
 
 This is an experimental idea. If you’re interested in kernel development or filesystem architecture, feel free to fork, submit PRs, or help optimize the I/O path!

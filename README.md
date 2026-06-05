@@ -1,6 +1,8 @@
 > [!IMPORTANT]
 > Coming soon to a repo near you...
 
+This version is not as tested as the other two.
+
 Oh hello! This is just like v6 from latest but stripped of all those pesky deps.
 Enjoy!
 

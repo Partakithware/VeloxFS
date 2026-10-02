@@ -1,0 +1,293 @@
+--- veloxfs_bm_orig.h	2026-10-02 00:55:28.806203921 +0000
++++ veloxfs_bm.h	2026-10-02 01:00:09.765596603 +0000
+@@ -522,6 +522,9 @@
+ /* ============================================================================
+  * Directory hash table
+  * ========================================================================= */
++#define veloxfs_HASH_EMPTY UINT64_MAX
++#define veloxfs_HASH_TOMB  (UINT64_MAX - 1)   /* deleted slot: keeps probe chains intact */
++
+ static uint64_t hash_path(const char *path) {
+     uint64_t h = 14695981039346656037ULL;
+     while (*path) { h ^= (uint8_t)(*path++); h *= 1099511628211ULL; }
+@@ -548,7 +551,8 @@
+ static void veloxfs_hash_insert(veloxfs_handle *fs, uint64_t idx) {
+     if (!fs->dir_hash_table) return;
+     uint64_t slot = hash_path(fs->directory[idx].path) % fs->dir_hash_size;
+-    while (fs->dir_hash_table[slot] != UINT64_MAX)
++    while (fs->dir_hash_table[slot] != veloxfs_HASH_EMPTY &&
++           fs->dir_hash_table[slot] != veloxfs_HASH_TOMB)
+         slot = (slot + 1) % fs->dir_hash_size;
+     fs->dir_hash_table[slot] = idx;
+ }
+@@ -558,10 +562,11 @@
+     uint64_t slot = hash_path(path) % fs->dir_hash_size;
+     for (uint64_t p = 0; p < fs->dir_hash_size; p++) {
+         uint64_t idx = fs->dir_hash_table[slot];
+-        if (idx == UINT64_MAX) return;
+-        if (fs->directory[idx].inode_num != 0 &&
++        if (idx == veloxfs_HASH_EMPTY) return;
++        if (idx != veloxfs_HASH_TOMB &&
++            fs->directory[idx].inode_num != 0 &&
+             veloxfs_STRCMP(fs->directory[idx].path, path) == 0) {
+-            fs->dir_hash_table[slot] = UINT64_MAX;
++            fs->dir_hash_table[slot] = veloxfs_HASH_TOMB;
+             return;
+         }
+         slot = (slot + 1) % fs->dir_hash_size;
+@@ -685,11 +690,56 @@
+     return veloxfs_fat_get_nth(fs, inode->fat_head, logical_n);
+ }
+ 
++
++/* Sum of blocks held by the inline extents (logical index where the overflow
++ * FAT chain begins). */
++static uint64_t veloxfs_inode_extent_blocks(const veloxfs_inode *inode) {
++    uint64_t t = 0;
++    if (inode->inode_flags & veloxfs_INODE_F_EXTENTS)
++        for (uint64_t i = 0; i < inode->extent_count; i++)
++            t += inode->extents[i].block_count;
++    return t;
++}
++
++/*
++ * Read or write `count` bytes of the part of a file that lives in the overflow
++ * FAT chain.  `byte_pos` is the absolute file offset and must be at or beyond
++ * the end of the inline extents.  *done_out receives the bytes transferred
++ * (may be < count if the chain ends early -- caller decides if that is an error).
++ */
++static int veloxfs_chain_io(veloxfs_handle *fs, veloxfs_inode *in, uint64_t byte_pos,
++                            void *buf, uint64_t count, int is_write, uint64_t *done_out) {
++    uint64_t bs  = veloxfs_BS(fs);
++    uint64_t off = byte_pos % bs;
++    uint64_t blk = veloxfs_fat_get_nth(fs, in->fat_head,
++                                       byte_pos / bs - veloxfs_inode_extent_blocks(in));
++    uint64_t done = 0;
++    uint8_t *p = (uint8_t*)buf;
++    while (done < count && blk != 0 && blk < fs->super.block_count) {
++        uint64_t chunk = bs - off;
++        if (chunk > count - done) chunk = count - done;
++        if (is_write) {
++            if (chunk < bs && veloxfs_read_block(fs, blk, fs->block_buf) != 0) return veloxfs_ERR_IO;
++            veloxfs_MEMCPY(fs->block_buf + off, p + done, chunk);
++            if (veloxfs_write_block(fs, blk, fs->block_buf) != 0) return veloxfs_ERR_IO;
++        } else {
++            if (veloxfs_read_block(fs, blk, fs->block_buf) != 0) return veloxfs_ERR_IO;
++            veloxfs_MEMCPY(p + done, fs->block_buf + off, chunk);
++        }
++        done += chunk; off = 0;
++        uint64_t nx = fs->fat[blk];
++        blk = (nx == veloxfs_FAT_EOF || nx == veloxfs_FAT_FREE || nx == veloxfs_FAT_BAD) ? 0 : nx;
++    }
++    *done_out = done;
++    return veloxfs_OK;
++}
++
+ static int veloxfs_inode_extend(veloxfs_handle *fs, veloxfs_inode *inode,
+                                  uint64_t extra_blocks) {
+     uint64_t remaining = extra_blocks;
+ 
+-    if ((inode->inode_flags & veloxfs_INODE_F_EXTENTS) && inode->extent_count > 0) {
++    if ((inode->inode_flags & veloxfs_INODE_F_EXTENTS) && inode->extent_count > 0 &&
++        inode->fat_head == 0) {   /* growing an extent would shift the overflow chain */
+         veloxfs_extent *last = &inode->extents[inode->extent_count - 1];
+         uint64_t next_phys = last->start_block + last->block_count;
+         uint64_t grown = 0;
+@@ -927,8 +977,9 @@
+         uint64_t slot = hash_path(path) % fs->dir_hash_size;
+         for (uint64_t p = 0; p < fs->dir_hash_size; p++) {
+             uint64_t idx = fs->dir_hash_table[slot];
+-            if (idx == UINT64_MAX) return NULL;
+-            if (fs->directory[idx].inode_num != 0 &&
++            if (idx == veloxfs_HASH_EMPTY) return NULL;
++            if (idx != veloxfs_HASH_TOMB &&
++                fs->directory[idx].inode_num != 0 &&
+                 veloxfs_STRCMP(fs->directory[idx].path, path) == 0)
+                 return &fs->directory[idx];
+             slot = (slot + 1) % fs->dir_hash_size;
+@@ -1246,11 +1297,11 @@
+     veloxfs_inode *in = veloxfs_get_inode(fs, d->inode_num);
+     if (!in) return veloxfs_ERR_CORRUPT;
+     if (!veloxfs_check_permission(fs, in, 1)) return veloxfs_ERR_PERMISSION;
++    veloxfs_hash_remove(fs, old_n);          /* must happen while d->path still holds the old name */
+     veloxfs_STRNCPY(d->path, new_n, veloxfs_MAX_PATH - 1);
+     d->path[veloxfs_MAX_PATH - 1] = '\0';
+     fs->dirty_dir = 1;
+-    for (uint64_t i = 0; i < fs->num_dirents; i++)
+-        if (&fs->directory[i] == d) { veloxfs_hash_update(fs, old_n, i); break; }
++    veloxfs_hash_insert(fs, (uint64_t)(d - fs->directory));
+     return veloxfs_OK;
+ }
+ 
+@@ -1319,19 +1370,28 @@
+             uint64_t ext_bytes = e->block_count * bs;
+             uint64_t to_write  = (ext_bytes < remaining) ? ext_bytes : remaining;
+             uint64_t full_blocks = to_write / bs;
++            uint64_t tail        = to_write % bs;   /* non-zero only for the final piece */
+             if (full_blocks > 0) {
+                 if (veloxfs_write_blocks(fs, e->start_block, src, full_blocks) != 0)
+                     return veloxfs_ERR_IO;
+-                src += full_blocks * bs; remaining -= full_blocks * bs;
++                src += full_blocks * bs;
+             }
+-            if (remaining > 0 && remaining < bs && ei == in->extent_count - 1) {
++            if (tail > 0) {
+                 veloxfs_MEMSET(fs->block_buf, 0, bs);
+-                veloxfs_MEMCPY(fs->block_buf, src, remaining);
++                veloxfs_MEMCPY(fs->block_buf, src, tail);
+                 if (veloxfs_write_block(fs, e->start_block + full_blocks, fs->block_buf) != 0)
+                     return veloxfs_ERR_IO;
+-                remaining = 0;
++                src += tail;
+             }
++            remaining -= to_write;
+         }
++        if (remaining > 0 && in->fat_head != 0) {
++            uint64_t d2 = 0;
++            if (veloxfs_chain_io(fs, in, size - remaining, (void*)src, remaining, 1, &d2) != 0)
++                return veloxfs_ERR_IO;
++            remaining -= d2;
++        }
++        if (remaining > 0) return veloxfs_ERR_CORRUPT;
+     } else {
+         uint64_t block = in->fat_head;
+         while (remaining > 0 && block != 0 && block < fs->super.block_count) {
+@@ -1374,18 +1434,27 @@
+             uint64_t ext_bytes  = e->block_count * bs;
+             uint64_t to_read    = (ext_bytes < remaining) ? ext_bytes : remaining;
+             uint64_t full_blocks = to_read / bs;
++            uint64_t tail        = to_read % bs;    /* non-zero only for the final piece */
+             if (full_blocks > 0) {
+                 if (veloxfs_read_blocks(fs, e->start_block, dest, full_blocks) != 0)
+                     return veloxfs_ERR_IO;
+-                dest += full_blocks * bs; remaining -= full_blocks * bs;
++                dest += full_blocks * bs;
+             }
+-            if (remaining > 0 && remaining < bs) {
++            if (tail > 0) {
+                 if (veloxfs_read_block(fs, e->start_block + full_blocks, fs->block_buf) != 0)
+                     return veloxfs_ERR_IO;
+-                veloxfs_MEMCPY(dest, fs->block_buf, remaining);
+-                remaining = 0;
++                veloxfs_MEMCPY(dest, fs->block_buf, tail);
++                dest += tail;
+             }
++            remaining -= to_read;
++        }
++        if (remaining > 0 && in->fat_head != 0) {
++            uint64_t d2 = 0;
++            if (veloxfs_chain_io(fs, in, size - remaining, dest, remaining, 0, &d2) != 0)
++                return veloxfs_ERR_IO;
++            remaining -= d2;
+         }
++        if (remaining > 0) return veloxfs_ERR_CORRUPT;
+     } else {
+         uint64_t block = in->fat_head;
+         while (remaining > 0 && block != 0 && block < fs->super.block_count) {
+@@ -1464,6 +1533,13 @@
+                 return veloxfs_ERR_IO;
+             done += chunk; logical_block = skipped + e->block_count; block_off = 0; skipped = logical_block;
+         }
++        if (done < to_read && in->fat_head != 0 &&
++            (pos + done) / bs >= veloxfs_inode_extent_blocks(in)) {
++            uint64_t d2 = 0;
++            if (veloxfs_chain_io(fs, in, pos + done, dest + done, to_read - done, 0, &d2) != 0)
++                return veloxfs_ERR_IO;
++            done += d2;
++        }
+     } else {
+         uint64_t target_idx = pos / bs;
+         if (target_idx != file->fat_block_idx || (file->fat_block == 0 && in->fat_head != 0)) {
+@@ -1494,6 +1570,31 @@
+     return veloxfs_OK;
+ }
+ 
++/*
++ * Zero-fill file bytes [from, to).  Blocks are NOT zeroed on allocation (that was
++ * the v5 throughput killer), so any region a caller exposes without writing real
++ * data -- growth via truncate, or a write that starts past EOF -- must be zeroed
++ * here or it would read back whatever a previously deleted file left in the block.
++ */
++static int veloxfs_zero_fill(veloxfs_handle *fs, veloxfs_inode *in, uint64_t from, uint64_t to) {
++    if (to <= from) return veloxfs_OK;
++    uint64_t bs = veloxfs_BS(fs);
++    uint8_t *z = (uint8_t*)veloxfs_CALLOC(1, bs);
++    if (!z) return veloxfs_ERR_IO;
++    veloxfs_file tf;
++    veloxfs_MEMSET(&tf, 0, sizeof(tf));
++    tf.fs = fs; tf.inode = in; tf.position = from; tf.is_open = 1; tf.can_write = 1;
++    int ret = veloxfs_OK;
++    while (from < to && ret == veloxfs_OK) {
++        uint64_t n = bs - (from % bs);          /* up to the next block boundary, then whole blocks */
++        if (n > to - from) n = to - from;
++        ret = veloxfs_write(&tf, z, n);
++        from += n;
++    }
++    veloxfs_FREE(z);
++    return ret;
++}
++
+ int veloxfs_write(veloxfs_file *file, const void *buf, uint64_t count) {
+     if (!file || !file->is_open || !file->can_write) return veloxfs_ERR_INVALID;
+     veloxfs_inode  *in = file->inode;
+@@ -1501,14 +1602,19 @@
+     uint64_t        bs = veloxfs_BS(fs);
+     uint64_t end_pos = file->position + count;
+     if (end_pos > in->size) {
++        uint64_t old_size      = in->size;
+         uint64_t blocks_needed = (end_pos + bs - 1) / bs;
+         uint64_t blocks_have   = veloxfs_inode_total_blocks(fs, in);
+         if (blocks_needed > blocks_have) {
+             int ret = veloxfs_inode_extend(fs, in, blocks_needed - blocks_have);
+-            if (ret != veloxfs_OK) return ret;
++            if (ret != veloxfs_OK) return ret;      /* nothing has changed yet */
++        }
++        if (file->position > old_size) {            /* gap between EOF and write offset must read as zeros */
++            int zr = veloxfs_zero_fill(fs, in, old_size, file->position);
++            if (zr != veloxfs_OK) return zr;
+         }
+         if (fs->super.journal_enabled)
+-            veloxfs_journal_log(fs, veloxfs_JOP_WRITE, in->inode_num, 0, in->size, end_pos);
++            veloxfs_journal_log(fs, veloxfs_JOP_WRITE, in->inode_num, 0, old_size, end_pos);
+         in->size = end_pos;
+     }
+     const uint8_t *src = (const uint8_t*)buf;
+@@ -1557,6 +1663,13 @@
+             }
+             done += chunk; logical_block = skipped + e->block_count; block_off = 0; skipped = logical_block;
+         }
++        if (done < count && in->fat_head != 0 &&
++            (pos + done) / bs >= veloxfs_inode_extent_blocks(in)) {
++            uint64_t d2 = 0;
++            if (veloxfs_chain_io(fs, in, pos + done, (void*)(src + done), count - done, 1, &d2) != 0)
++                return veloxfs_ERR_IO;
++            done += d2;
++        }
+     } else {
+         uint64_t target_idx = pos / bs;
+         if (target_idx != file->fat_block_idx || (file->fat_block == 0 && in->fat_head != 0)) {
+@@ -1583,6 +1696,7 @@
+             }
+         }
+     }
++    if (done != count) return veloxfs_ERR_CORRUPT;   /* never report success for a short write */
+     file->position += done; file->modified = 1;
+     in->mtime = (uint64_t)veloxfs_TIME(); fs->dirty_inodes = 1;
+     if (fs->super.journal_enabled) veloxfs_journal_commit(fs);
+@@ -1618,9 +1732,13 @@
+     uint64_t bs = veloxfs_BS(fs);
+     uint64_t blocks_needed = (new_size + bs - 1) / bs;
+     uint64_t blocks_have   = veloxfs_inode_total_blocks(fs, in);
+-    if (blocks_needed > blocks_have) {
+-        int ret = veloxfs_inode_extend(fs, in, blocks_needed - blocks_have);
+-        if (ret != veloxfs_OK) return ret;
++    if (new_size > in->size) {                       /* grow: new bytes must read back as zeros */
++        if (blocks_needed > blocks_have) {
++            int ret = veloxfs_inode_extend(fs, in, blocks_needed - blocks_have);
++            if (ret != veloxfs_OK) return ret;      /* nothing has changed yet */
++        }
++        int zr = veloxfs_zero_fill(fs, in, in->size, new_size);
++        if (zr != veloxfs_OK) return zr;
+     } else if (blocks_needed < blocks_have) {
+         veloxfs_inode_truncate(fs, in, blocks_needed);
+     }

@@ -2,7 +2,7 @@
 > Coming soon to a repo near you...
 
 This version is not as tested as the other ones. READ CAREFULLY I HAVE NOT TESTED THIS VERSION I LET CLAUDE TAKE A SWING SO .....WELL....IN....SHORT
-I expect it to not work and have been messed up (claimed to fix two flaws I was not home and with a mate so untested, but what claude claimed sounded correct and should be fix 2 oversights of mine if they were AI hallucinations)
+I expect it to not work and have been messed up (claimed to fix two flaws I was not home and with a mate so untested, but what claude claimed sounded correct and should be fix 2 oversights of mine if they were AI hallucinations) He asked me to throw it into AI to see what it said...it claimed I suck...that's enough of my lack of professionalism use with caution or use BM/V6 versions instead, v5 should probably not be used.
 
 Oh hello! This is just like v6 from latest but stripped of all those pesky deps.
 Enjoy!

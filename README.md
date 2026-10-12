@@ -1,7 +1,8 @@
 > [!IMPORTANT]
 > Coming soon to a repo near you...
 
-This version is not as tested as the other two.
+This version is not as tested as the other ones. READ CAREFULLY I HAVE NOT TESTED THIS VERSION I LET CLAUDE TAKE A SWING SO .....WELL....IN....SHORT
+I expect it to not work and have been messed up (claimed to fix two flaws I was not home and with a mate so untested, but what claude claimed sounded correct and should be fix 2 oversights of mine if they were AI hallucinations)
 
 Oh hello! This is just like v6 from latest but stripped of all those pesky deps.
 Enjoy!
